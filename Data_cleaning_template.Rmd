@@ -1,0 +1,800 @@
+---
+title: "Data Cleaning Template"
+author: "Van Tong"
+date: January 16, 2023
+output: 
+  html_document:
+    fig_width: 10
+    fig_height: 7
+    toc: true
+    toc_float: true
+    theme: yeti
+    highlight: kate
+    #code_folding: hide
+    warning: false
+---
+
+<style>
+pre code, pre, code {
+  overflow-y: auto !important;
+  max-height: 40em;
+}
+
+.main-container {
+  max-width: 1800px;
+
+}
+
+</style>
+
+
+# Introduction
+
+This document aims to record some of the most common and useful functions, mainly in `tidyverse`, for data analysis, from manipulating rows and columns, renaming and recoding data, to creating summary statistics tables. `tidyverse` itself is handsomely powerful, but it can also be gracefully used hands in hands with `base R` and other packages, depending on which tasks we are doing. 
+
+# RMarkdown Basics and Shortcuts
+
+## R code chunks
+
+When we wrap our code in a code chunk, the output of the code will appear right below the chunk.
+
+We can insert an R code chunk either using the RStudio toolbar (the Insert button) or the keyboard shortcut Ctrl + Alt + I (Cmd + Option + I on macOS).
+
+There are a lot of things we can do in a code chunk: we can produce text output, tables, or graphics. We have fine control over all these output via chunk options, which can be provided inside the curly braces (between `{r and }`). For example, we can choose to show or hide text output via the chunk option results = 'hide', or set the figure height to 4 inches via fig.height = 4. Chunk options are separated by commas, e.g., `{r, chunk-label, results='show', fig.height=4}`
+
+```{r, chunk-label, results='show', fig.height=4}
+#empty example chunk
+a=2
+b=3
+a+b
+```
+
+The value of a chunk option can be an arbitrary R expression, which makes chunk options extremely flexible. There are many chunk options, some we may encounter often:
+
+- `eval`: Whether to evaluate a code chunk. I added an `eval=FALSE` as a chunk option in all chunks in this template document because in order to knit an RMarkdown file, all codes need to run; code examples in this document are not based on any example datasets, variables used are also ambiguous (e.g. var1, var2) thus documents will not be able to knit unless I stop the evaluation of chunks. If using real data and wishing to knit, do not forget to set `eval=TRUE` (default) or remove `eval=FALSE`.
+
+- `echo`: Whether to echo the source code in the output document (someone may not prefer reading your smart source code but only results). Basically, to print output in the knitted document without showing the codes.
+
+- `include`: Whether to include anything from a code chunk in the output document. When `include = FALSE`, this whole code chunk is excluded in the output, but note that it will still be evaluated if `eval = TRUE`. When you are trying to set `echo = FALSE`, `results = 'hide'`, `warning = FALSE`, and `message = FALSE`, you can simply set `include = FALSE` instead of suppressing different types of text output individually. Basically, run the codes but knit nothing.
+
+## Shortcuts
+
+| Action                            |   Window                    |     MacOS                       |
+|:---------------------------------:|:---------------------------:|:-------------------------------:|
+| Knit document	                    |   Ctrl + Shift + K	        |     Cmd + Shift + K             |
+| Insert Chunk	                    |   Ctrl + Alt + I	          |     Cmd + Option + I            |
+| Run Current Chunk	                |   Ctrl + Alt + C	          |     Cmd + Option + C            |
+| Jump to                           |   Shift+Alt+J	              |     Cmd+Shift+Option+J	        |
+| Show Keyboard Shortcut Reference	|   Alt+Shift+K	              |     Option+Shift+K              |
+| Create multiple cursors	          |   Ctrl + Alt + Up/Down	    |     Option + control + Up/Down  |
+| Delete the current line	          |   Ctrl + D	Cmd + D         |                                 |
+| Un/Comment out a line	            |   Ctrl + Shift + C	        |     Cmd + Shift + C             |
+| Reformat Section	                |   Ctrl + Shift + A	        |     Cmd + Shift + A             |
+
+# Set Up RMarkdown and Dependencies
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# setting global directory
+knitr::opts_knit$set(warning = FALSE, message = FALSE) # turn off warnings and messages
+
+# suppress summarise info
+options(dplyr.summarise.inform = FALSE)
+```
+
+# Loading Libraries and Functions
+
+```{r, warning=F, message=F}
+if (!require("pacman")) install.packages("pacman")
+
+# install and read all necessary libraries through the pacman package
+pacman::p_load(tidyverse, dplyr, ggplot2, magrittr, janitor, knitr)
+```
+
+```{r}
+# set up ggplots customization for later use
+plot.custom <- theme(
+    panel.background= element_rect(fill=NA), # transparent panel
+    plot.background = element_rect(fill=NA, colour=NA), #transparent background
+    panel.grid=element_blank(), # remove panel grid
+    axis.ticks.x=element_blank(), # remove tick marks on x-axis
+    axis.ticks=element_line(colour="gray70"), # change colour of tick marks
+    panel.border = element_rect(fill="transparent", colour="gray70"), # change panel border colour
+    legend.background = element_rect(fill = "transparent", colour = "transparent"), # change legend background
+    axis.text = element_text(color="gray20"),
+    axis.text.x = element_text(size=12),
+    text=element_text(size=12),
+    axis.title.y = element_text(vjust=1.5),
+    strip.background = element_rect(fill = "transparent", colour="grey70"),
+    legend.key = element_rect(fill = "transparent", colour = "transparent")
+    # ,legend.position="none"
+  )
+
+# color palette
+pal <- c("#FF983B", "#AA3A39", "#FE4E4E", "#EE5397", "#634490", "#3466A5", "#00C4D4")
+```
+
+# Set Working Directories
+
+How to set RMarkdown working directories on RMarkdown: `Menu bar` > `Session` > `Set Working Directory` > `Choose Directory`
+
+Can code it manually too, using `setwd()`
+
+```{r, eval=F}
+setwd("/Users/Vancouver/Desktop")
+```
+
+# Import Data
+
+Import data as raw, without some preliminary reformatting. See one with formatting in next chunk.
+
+```{r, eval=F}
+#call data file from working directory or open web source
+#private one like Dropbox may not work
+input <- if (file.exists("file.csv")) {
+  "file.csv"
+} else {
+  "https://links.to.file.from.open.web.source/file.csv"
+}
+
+#or, for simplicity
+input <- "file.csv"
+
+#then read the file
+dat <- read_csv(input, col_types = cols())
+
+#or, we can choose file from working directory
+dat <- read_csv(file.choose(), col_types = cols())
+```
+
+Some prelimiary formatting of the data can be done right at this step where we import the raw data, only if we know the data really well. For more details of each function, see in next sections.
+
+```{r, eval=F}
+data <- readr::read_csv(input, 
+                        col_types = cols(  
+                                         #let's assume var1 is e.g. participants' ID; 
+                                         #specifying what cols are of which class e.g. numeric, factor, etc.
+                                         #here loads the data a bit faster by reducing class-guessing time
+                                         var1 = col_character(),
+                                         var2 = col_factor(),
+                                         #formatting daytime var
+                                         var.time = col_datetime("%m/%d/%Y %I:%M:%S %p"), 
+                                         #format the rest as class double
+                                         .default = col_double()), 
+                                         #remove header rows; e.g. remove 2 extra header rows skip=2
+                                         skip= , 
+                                         na="NA"
+                        ) %>% 
+  #all cols' names to lower case
+  rename_all(tolower) %>%   
+  #substitute a pattern in cols' names with a different pattern
+  #e.g. rename all dots to underscores
+  #fill in old pattern within first '', new pattern within second ''
+  rename_with(~gsub('[[:punct:]]', '', .x)) %>% 
+  #keep interested columns, passing multiple conditions
+  #e.g. select var1 to var3 and vars whose names start with e.g. "X" X1, X2, or contains "Y" 
+  #capslock matters
+  select(var1:var3, starts_with("X"), contains("Y")) 
+```
+
+# Data Wrangling
+## Example workflow
+
+Here's an example of a mini workflow for cleaning data. If you're new to tidyverse, this code chunk may not make sense to you now; but hopefully, once you go over all the sections of this document and comeback here later, you can understand these example codes clearly.
+
+```{r, eval=F}
+data1 <- data %>%   #store data outputs to new dataframe
+  #filtering rows with at least one column being not NA
+  #meaning, rows with all NAs in cols are removed
+  filter(if_any(everything(), ~ !is.na(.))) %>%  
+  #return only rows that meet these AND/OR conditions, all columns included
+  filter(grepl('sth', var1) |
+           var2 > 100 |
+           var3 %in% c("a", "b") & var4 == "char") %>% 
+  #return only columns that contain the string, of the rows filtered 
+  select(grep('sth', colnames(data))) %>% 
+  #take log all vars that are of class num
+  #this is one example to play around w mutate_if
+  mutate_if(is.numeric, function(x)log(x)) %>% 
+  mutate_at(.vars = vars("var1":"var5"), 
+            .funs = function(x)ifelse(!is.na(x), as.numeric(x), NA)) %>%
+  #e.g. rename columns that contain gdp e.g. gdp_2001 to gdp_2001_real
+  rename_at(vars(contains("gdp")), ~paste0(.,"_real")) %>%  
+  #capitalize the first letter of any columns whose names start with "p"
+  rename_if(startsWith(names(.), "p"), 
+            .funs = function(x)stringr::str_to_sentence(x)) 
+```
+
+## Subset columns
+
+Subset columns using `dplyr::select()`. `select()` is often masked by different packages, thus confusing R of which `select()` from which package you are calling. So I suggest we always call the package as we use, thus we have `dplyr::select()`.
+
+`Dplyr::select()` allows us to select variables in a data frame, using a concise mini-language that makes it easy to refer to variables based on their name (e.g. var1:var5 selects all columns from var1 to var5 and all in between).
+
+```{r, eval=F}
+data %>% 
+  #keep all cols
+  select(everything()) %>%
+  #select multiple cols
+  select(
+         var1:var5, var10,  
+         #can also rename at this step
+         var.new = var.old, 
+         #e.g. select vars "var.time" and rename it to "date"
+         date = var.time
+         ) %>% 
+  #select all cols names in uppercase
+  select_all(toupper)
+```
+
+Variations of `dplyr::select()`:
+
+- `select_all()`, `select_if()`, `select_at()` require that a function is passed within. If we have to add any negation or arguments, we will have to wrap the function inside `funs()` or add a tilde `~` before to ensure that `select_all`, `select_if`, `select_at` recognize those arguments as a function. For example, `mean(., na.rm=TRUE) > 10` is not a function itself, so we must add a tilde before it or wrap them in `funs()`. 
+
+- In multiple conditions argument, e.g. `is.numeric(.) & mean(., na.rm=TRUE) > 10`, `is.numeric(.)` alone is a function, but when we pair it with another non-function condition like `mean(., na.rm=TRUE) > 10`, a tilde or `funs()` are also required.
+
+- Recall that the pipe operator `%>%` assigns the output of the objects (e.g. data), a function (e.g. cols remained), etc. its left to the function on its right. So, if we want to use all of such output on the left statement on the right statement where there's parentheses, we will need to add a dot. A dot means "here", or "everything here". Here, `select_if(is.numeric)` or `select_if(is.numeric(.))` return the same thing; we read "select all columns that are numeric". However, when to use the former or the latter depends on if we want to pass more arguments within `select_if`; if yes, use the latter, and pay attention to the rule of tilde.
+
+```{r, eval=F}
+#conditional subset
+data %>% 
+  #1. select vars that start with "X" (e.g. X1, X2) and does not contain any underscore
+  #so, X_1 or X_1_A will not be kept
+  select(starts_with("X") & !contains("_")) %>%  
+  #2. keep only cols that are of class numeric and mean greater than 10
+  #recall that it needs a tilde ~ here given that a function condition is paired with a non-function condition
+  select_if(~is.numeric(.) & mean(., na.rm=TRUE) > 10) %>% 
+  #select cols of class numeric and cols var7 and var8
+  select(c(which(sapply(., is.numeric)), "var7", "var8")) %>%  
+  #similarly, but using select_at()
+  select_at(vars(names(.)[sapply(., is.numeric)], "var7", "var8")) %>% 
+  #replace patterns
+  #e.g. replace all white space in vars' names with an underscore, var time to var_time. 
+  #this is similar to using rename_with(~gsub())
+  select_all(~str_replace(., " ", "_"))    
+```
+
+Selecting columns on pre-defined vector using `!!`. Use `all_of()` or `any_of()` to allow missing variables.
+
+```{r, eval=F}
+vector <- c("var1", "var2", "var5", "var9", "var20")
+data %>%
+  #select vars in the vector
+  select(!!vector) %>%   
+  #this is similar to !!, but if there are missing values, it will return errors. 
+  #for safety, use any_of()
+  select(all_of(vector)) %>%  
+  #select vars not in the vector
+  select(-any_of(vector))    
+```
+
+## Subset rows
+
+Subset rows using `dplyr::filter()`. 
+
+`Dplyr::filter()` allows us to keep the rows that meet the conditions we specify; such conditions are either based on existing values in cols or our own defined inputs. 
+
+When multiple expressions are used, they are combined using `&`. We can always specify it accordingly to the conditions we want, using:
+
+- `==`, `>`, `>=`, etc.
+
+- `&`, `|`, `!`, `xor()`
+
+- `is.na()`
+
+- `between()`, `near()`: `near(x,y,tol=)` selects all code that is nearly a given value. We have to specify a tolerance `tol` to indicate how far the values can be. We can add a specific number: `filter(near(var2, 50, tol = 5))` for instance will return any rows where `var2` is between 45 and 55, or we can add a formula.
+For instance, the sample code in the chunk will return all rows that are within one standard deviation of 50.
+
+- `if_any()`, `if_all()`: keep rows if all or at least one of the selected columns satisfy the conditions. This works similarly to `across()`, which lets we perform a set of actions across a tidy selection of columns. But `across()` is not tailored to be used with `filter()`, thus oftentimes “messing-up” the results; although it is a very convenient function to use with `mutate()`, `summarise()`, and `group_by()`. Instead, `if_any()`, `if_all()` are more `filter()`-friendly
+
+```{r, eval=F}
+#filter by multiple criteria within a single logical expression
+data %>% 
+  filter(var1 == "women", var2 == "canada", !between(var5, 50, 100)) %>% 
+  filter(near(var2, 50, tol = sd(var2)))
+  
+
+#to refer to column names that are stored as strings, use the `.data` pronoun:
+vars <- c("var3", "var4")
+cond <- c(5, 15)
+data %>%
+  filter(
+    .data[[vars[[1]]]] > cond[[2]] |
+    .data[[vars[[2]]]] > cond[[1]]
+  )
+```
+
+We can use many different verbs within `filter()` to allow more complex syntax and conditions. Some verbs that we can try from `baseR` and package `stringr`
+
+- `baseR`: `grepl()`, `grep()`, `nchar()`, `substr()`, `sub()`
+
+- `stringr`: `str_detect()`, `str_count()`, `str_sub()`, `str_replace()`
+
+Some of these functions from `baseR` and package `stringr` (e.g. `grepl()` and `str_detect()`) perform similar tasks. But the verbs from `stringr` can be easier to read sometimes as the prefix `str_` lets us know we are working with strings. Moreover, the first argument of the functions from `stringr` package is always the data.frame (or value), then comes the parameters, which can be more intuitive than the baseR’s argument order.
+
+```{r, eval=F}
+data %>% 
+  #multiple conditions
+  #pay attention to parentheses
+  filter(grepl('X', var1) | (var3 %in% 1:5 & var4 == "Y")) %>% 
+  #only keep rows where var1 contains a letter "z", not capital "Z", because of tolower()
+  filter(str_detect(tolower(var1), pattern = "Z")) %>% 
+  #filter out any rows that have multiple occurrences of "and" in var2. 
+  #e.g. we don't keep rows whose var2's values look like "Harry and Ron and Hermione", 
+  #but only keep values like "Harry and Ron" or "Ron and Hermione"
+  filter(str_count(var2, 'and') < 2) %>% 
+  #retain any rows where any of the variables has the pattern “exp” inside
+  filter_all(any_vars(str_detect(., pattern = "exp"))) %>% 
+  #filter on numeric variables and has at least one column greater than 0
+  filter_if(is.numeric, rowSums(. !=0, na.rm=T) >0) %>%  
+  #keep rows where column names contain "num" (of class numeric) and is greater than 10. 
+  filter_at(vars(contains("num")), all_vars(.>10)) 
+```
+
+## Mutate data
+
+Using `dplyr::mutate()` to manipulate/transform columns, from making new columns to changing the current columns or splitting/merging columns.
+
+`mutate()` allows endless options of functions inside it.
+
+Now we go over a basic example of how `mutate()` is used. Let’s imagine we want to calculate location proximity by comparing the distance from a set of cities J to a city A with the average and min distance of all cities J to city A. Here we create 2 new columns to store the data.
+
+```{r, eval=F}
+data %>% 
+  mutate(dist_vs_avg = dist - round(mean(dist), 1),
+         dist_vs_min = dist - min(dist)) %>% 
+  #rowwise() allows calculation by rows
+  rowwise() %>%  
+  #here, as we grouped by rows, avg is calculated as the sum of an observation's var1 and var2 divided by number of vars (i.e. 2)
+  mutate(avg = mean(c(var1, var2))) %>%   
+  #always ungroup() after performing row-wise calculations in order to not mess up any steps behind that do not need grouping by rows
+  ungroup() %>%    
+  #create an indicator/new column
+  mutate(indicator = ifelse(avg > 10, "high", "low")) 
+```
+
+Let’s try more variation of mutate().
+
+- `mutate_all()`: will mutate all columns based on your further instructions. The mutating action needs to be a function: in many cases you can pass the function name without the brackets, but in some cases you need arguments or you want to combine elements. In this case you have some options: either you make a function up front (useful if it’s longer), or you make a function on the fly by wrapping it inside `funs()` or via a tilde.
+
+```{r, eval=F}
+data %>% 
+  #turning all the data to lower case
+  mutate_all(tolower) %>%  
+  #add /n to all obs values
+  mutate_all(~paste(., "  /n  ")) %>% 
+  #replace the added /n with nothing (basically removing it)
+  mutate_all(~str_replace_all(., "/n", "")) %>%
+  #trim additional white spaces at the end
+  mutate_all(str_trim)
+```
+
+- `mutate_if()`: takes two arguments. First it needs information about the columns we want it to consider. This information needs to be a function that returns a boolean value, e.g. `is.numeric`, `is.integer`, `is.double`, `is.logical`, `is.factor`, `lubridate::is.POSIXt` or `lubridate::is.Date`. Second argument (in the form of function) is the task we want to perform. If needed, use a tilde or `funs()`.
+
+```{r, eval=F}
+  #round all data that is of class numeric
+  mutate_if(is.numeric, round) %>% 
+  #take log all vars that are of class num
+  mutate_if(is.numeric, function(x)log(x))
+```
+
+- `mutate_at()`: takes two arguments. In the first argument, we wrap any selection of columns inside `vars()`. Second, it needs instructions about the mutation in the form of a function. If needed, use a tilde or `funs()`.
+
+```{r, eval=F}
+  #arguments are passed only on var1 to var5
+  #here, if var1 to var5 values are not NA, then assign numeric; if NA, remain NA
+  mutate_at(vars("var1":"var5"), function(x)ifelse(!is.na(x), as.numeric(x), NA)) %>% 
+  #create 2 new columns var1_difftomean and var2_difftomean that take values var1-mean(var1) and var2-mean(var2) respectively, 
+  #similarly to the above calculations using rowwise() 
+  mutate(across(c(var1, var2), ~ .x - mean(.x, na.rm = TRUE), .names = "{col}_difftomean"))  
+  #factorize all variables except var1
+  mutate(across(!var1 & !var2, as.factor)) %>% 
+  #similarly, but use mutate_at()
+  mutate_at(vars(-one_of("var1", "var2")), as.factor)     
+```
+
+## Rename variables
+
+Renaming variables can be complicated sometimes when data are messy, but it can also be very simple given that we only need to understand `rename_at()` and `rename_if()` like the back of our hands.
+
+Similar to `mutate_at()` and `mutate_if()`:
+
+- `mutate_at()`: takes two arguments. In the first argument, we wrap any selection of columns inside `vars()`. Second, it needs instructions about the mutation in the form of a function. If needed, use a tilde or `funs()`.
+
+- `rename_if()`: takes two arguments. First it needs information about the columns we want it to consider. This information needs to be a function that returns a boolean value, e.g. `is.numeric`, `is.integer`, `is.double`, `is.logical`, `is.factor`, `lubridate::is.POSIXt` or `lubridate::is.Date`. Second argument (in the form of function) is the task we want to perform. If needed, use a tilde or `funs()`.
+
+```{r, eval=F}
+data %>% 
+  rename(new.name = old.name) %>% 
+  #for all columns names that start with letter T, replace "Tree" (if exists) with "Tree_Type"
+  rename_at(vars(starts_with("T")), 
+                 funs(str_replace(., "Tree", "Tree_Type"))) %>% 
+  #similarly, but instead of wrapping the whole function in funs(), we can add a tilde to signify a function
+  rename_at(vars(starts_with("X")), ~str_replace(.,"X", "Y"))
+  #rename all columns names that contains "gdp" by adding "_real"
+  rename_at(vars(contains("gdp")), ~paste0(.,"_real")) %>% 
+  #capitalize the first letter of any columns whose names start with "p"
+  rename_if(startsWith(names(.), "p"), 
+            .funs = function(x)stringr::str_to_sentence(x)) %>%  
+  #rename all columns except ID by replacing capital letter X with a pre-defined vector k 
+  rename_with(~str_replace_all(., "X", k), -c("ID")) 
+```
+
+## Recode variables
+
+Recode variables using `dplyr::recode()`.
+
+Let’s think of an example where we may want to recode multiple variables at once. Variable var1, var2, var3 record responses of a Likert scale type, ranging from highly disagree, disagree, neutral, agree, to highly agree. 
+
+```{r, eval=F}
+data %>% 
+  mutate_at(vars(var1:var3), dplyr::recode, "highly disagree" = 1, "disagree" = 2, "neutral" = 3, "agree" = 4, "highly agree" = 5)
+```
+
+However, `dplyr::recode()` needs a replacement for all values. So in this example, since the function requires all values to be replaced, even if we don’t want to recode "neutral", we still have to add `“neutral”=“neutral”`. Another shortcoming is it returns error when there is NA. 
+
+Now let’s we recode it back to Likert scale without having to replace all values.
+
+```{r, eval=F}
+data %>% 
+  mutate_at(.vars = vars(var1:var3),      
+            .funs = function(x) dplyr::recode(x, `1` = "highly disagree", 
+                                          `2` = "disagree", 
+                                          `3` = "neutral", 
+                                          `4` = "agree", 
+                                          `5` = "highly agree"))
+```
+
+`Mutate()` and `recode()` also allow us to create new variable e.g. new.var on conditions from existing variables.
+
+```{r, eval=F}
+data %>% 
+  mutate(new.var = recode(var1, 
+                          `1` = "one",  ##numeric values have to be in ` `
+                          `0` = "zero",
+                          .default = NA)) %>% #all other values are mapped to NA; can be any values. 
+  mutate(across((starts_with("X") & ends_with(as.character(1:5))),#from var X1 to X5
+                recode, "1" = 5, "2" = 4, "3" = 3,"4" = 2, "5" = 1))
+
+#on conditions from several old variable
+recode.w.mutp.conditions <- data %>%
+        mutate(new.var = case_when(
+               var1 == 1 ~ "one",
+               var2 >50 | var3 == "good" ~ "two",
+               var2 >50 | (var3 == "good" & var4 >50 ) ~ "three")) 
+#does not require replacement for all values, it will fill NA to where without replacement
+```
+
+### Working with Discrete Columns
+
+Some working examples with `recode()`.
+
+Using `recode()` inside a `mutate()` statement enables you to change the current naming, or to group current levels into fewer levels. The `.default` refers to anything that isn’t covered by the before groups with the exception of NA. You can change NA into something other than NA by adding a `.missing` argument if you want.
+
+```{r, eval=F}
+data %>%
+  mutate(var1.new = recode(var1,
+                        "vnm" = "vietnam",
+                        "can" = "canada",
+                        "us" = "usa",
+                        .default = "other")) %>%   #this will return NA as <NA> in count table
+  count(var1.new)
+```
+
+To return a factor, use `recode_factor()`. By default the `.ordered` argument is `FALSE`. To return an ordered factor set the argument to `TRUE`.
+
+```{r, eval=F}
+msleep %>%
+  mutate(var1.new = recode_factor(var1,
+                                  "vnm" = "vietnam",
+                                  "can" = "canada",
+                                  "us" = "usa",
+                                  .default = "other",
+                                  .missing = "no data",
+                                  .ordered = TRUE)) %>%
+  count(var1.new)
+```
+
+### Creating New Discrete Column (`case_when()`)
+
+Two levels.
+
+- The `ifelse()` statement can be used to turn a numeric column into a discrete one. `ifelse()` takes a logical expression, then what to do if the expression returns TRUE and lastly what to do when it returns FALSE.
+
+```{r, eval=F}
+var1.new %>%
+  mutate(count = ifelse(var1.new > 25, "many", "few"))
+```
+
+Multiple levels.
+
+- The `ifelse()` can be nested but if you want more than two levels, but it might be even easier to use `case_when()` which allows as many statements as you like and is easier to read than many nested ifelse statements.
+
+- The arguments are evaluated in order, so only the rows where the first statement is not true will continue to be evaluated for the next statement. For everything that is left at the end just use the `TRUE ~ "newname"` or `TRUE ~ NA_character_`, `NA_logical_`, etc..
+
+- Unfortunately there seems to be no easy way to get `case_when()` to return an ordered factor, so you will need to to do that yourself afterwards, either by using `forcats::fct_relevel()`, or just with a `factor()` function. If you have a lot of levels I would advice to make a levels vector upfront to avoid cluttering the pipe too much.
+
+```{r, eval=F}
+dat %>%
+  mutate(var5.discrete = case_when(
+                                    n > 13 ~ "a lot",
+                                    n > 10 ~ "few",
+                                    n > 7 ~ "limited",
+                                    TRUE ~ NA_character_)) %>%   #the rest will be recoded as NA
+  mutate(var5.dsicrete = factor(var5.dsicrete, 
+                                    levels = c("a lot", "few", "limited")))
+```
+
+The `case_when()` function does not only work inside a column, but can be used for grouping across columns:
+
+```{r, eval=F}
+data %>%
+  mutate(example_groups = case_when(
+                                    var1 < 10 ~ "group A",
+                                    var50 > 10 ~ "group B",
+                                    is.na(var88) ~ "group C",
+                                    TRUE ~ "other")) %>%
+  count(example_groups)
+```
+
+## Split - Apply - Combine
+
+What is split-apply-combine? You split the data into groups that you are interested in comparing, then you apply the functions, whether it's min, max, median, then you combine the outputs to form a summary table. To do this, it requires a combination of functions in sequence, commonly: `select()` to choose interested variables, then `filter()` to keep interested rows, then `group_by()` to "split" data into groups, then pass functions within `mutate()` to create new columns or keep the columns within the existing dataframe OR pass functions within `summarise()` to create a new dataframe that stores summary statistics. 
+
+```{r, eval=F}
+data %>%
+  select(var1:var6) %>% 
+  filter(var1 == "canada",
+         !is.na(var2)) %>%
+  group_by(var5,var6) %>%
+  summarize(mean_var3 = mean(var3),
+            sd_var4 = mean(var4))
+```
+
+Below is the breakdown of these steps.
+
+If you wish to show only summary statistics (summaries of the average, sum, standard deviation, minimum, maximum of the data) of interested groups and variables, use `summarise()`. To use the function you just add your new column name, and after the equal sign the mathematics of what needs to happen: `column_name = function(variable)`. You can add multiple summary functions behind each other.
+
+```{r, eval=F}
+data %>%
+  summarise(n = n(), 
+            average = mean(var1), 
+            maximum = max(var2))
+```
+
+In most cases, we don’t just want to summarise the whole data table, but we want to get summaries by a group. To do this, you first need to specify by which variable(s) you want to divide the data using `group_by()`. You can add one of more variables as arguments in `group_by()`. You can `ungroup()`, then `group_by()` again many times.
+
+```{r, eval=F}
+data %>%
+  group_by(var5) %>%
+  summarise(n = n(), 
+            average = mean(var1), 
+            maximum = max(var2)) %>% 
+  ungroup() 
+#try to ungroup() everytime you done any group calculation so that it does not mess up the next calculation that does not require grouping
+```
+
+Other `summarise()` functions: 
+
+1. `summarise_all()`
+
+The instructions for summarizing have to be a function, e.g. `summarise_all(mean, na.rm=TRUE)`, when it's not a function, you can add a tilde `~` or wrap the arguments in `funs()` to pass it as functions.
+
+```{r, eval=F}
+data %>%
+  group_by(var5) %>%
+  summarise_all(mean, na.rm=TRUE) #find means of all cols
+
+data %>% 
+  summarise_all(~mean(., na.rm = TRUE) + 5) #add tilde
+  summarise_all(funs(mean(., na.rm = TRUE) + 5)) #or wrap in funs()
+```
+
+2. `summarise_if()`
+
+The function summarise_if() requires two arguments:
+
+- First it needs information about the columns you want it to consider. This information needs to be a function that returns a boolean value. The easiest cases are functions like is.numeric, is.integer, is.double, is.logical, is.factor, lubridate::is.POSIXt or lubridate::is.Date.
+
+- Secondly, it needs information about how to summarise that data, which needs to be a function. If not a function, you can create a function on the fly using funs() or a tilde (see above).
+
+```{r, eval=F}
+data %>%
+  group_by(var5) %>%
+  summarise_if(is.numeric, mean, na.rm=TRUE)
+
+```
+
+3. `summarise_at()`
+
+The function summarise_at() also requires two arguments:
+
+- First it needs information about the columns you want it to consider. In this case you need to wrap them inside a vars() statement. Inside vars() you can use anything that can be used inside a select() statement. Have a look here if you need more info.
+
+- Secondly, it needs information about how to summarise that data, which as above needs to be a function. If not a function, you can create a function on the fly using funs() or a tilde (see above).
+
+```{r, eval=F}
+data %>%
+  group_by(var5) %>%
+  summarise_at(vars(contains("X")), mean, na.rm=TRUE)
+```
+
+# Easy tabulations
+
+Create quick frequency tables and crosstabs using package `janitor` and function `tabyl()` as a fully-featured alternative to `table()`.
+
+`tabyl()` returns n, percent, and “valid” percent (i.e., with missing values removed from the denominator). All are in data.frame format. This is similar to `table()` in `baseR`, yet `table()` does not accept data.frame inputs thus inconvenient to use the pipe operator%>%, while `tabyl()` does.
+
+```{r}
+#basic example
+x <- c("big", "big", "small", "small", "small", NA)
+janitor::tabyl(x)  
+```
+
+```{r, eval=F}
+#example on dataset
+#3-way tabulation/ table of 3 vars
+data %>% 
+    tabyl(var1, var2, var3, show_na=F) %>%
+    #return totals of row values for each vars 
+    #can be "col" or c("row","col")
+    #can also return totals for some specific vars of interest; 
+    #e.g. dat %>% adorn_totals("row",,,, -var1) this exempts var1
+    #OR
+    #return totals for only vars that contain e.g. "quest" (e.g. quest1, 2quest)
+    #e.g. dat %>% adorn_totals("row",,,,contains("quest"))
+    adorn_totals("row") %>%
+  
+    #retun percentages 
+    #sometimes the first col is missing; 
+    #"all" will treat the first col aka var1 as reference var
+    #thus need specifying the cols we want to calculate percentage 
+    #e.g. dat %>% adorn_percentages(,,var1:var3)
+    adorn_percentages("all") %>%    
+    
+    #rounding stuff
+    #similarly, sometimes we need to specify the cols we want 
+    #e.g. dat %>%  adorn_pct_formatting(,,var1:var3, digits=2)
+    adorn_pct_formatting(digits = 1) %>% 
+    
+    #display as: [count "(percent)"]
+    adorn_ns(position = "front") %>%  
+    #OR, display as: [percent "(count)"] from var1 to var3
+    #dat %>%  adorn_ns(,,var1:var3, position = "rear")  
+    #pay attention to 2 commas, not 1
+  
+    #title
+    adorn_title(row_name = ,
+                col_name = ,
+                placement = "combined") %>% 
+    #use this if stop right here n not converting to image
+    #knitr::kable() %>%  
+  
+    # convert to pretty image
+    flextable::flextable() %>%
+    # format to one line per row
+    flextable::autofit() %>% 
+    #save as html
+    flextable::save_as_html(path = "tab.html")  
+
+
+
+#perform statistical test on tabyl output
+tab1 <- data %>% 
+  tabyl(var1, var2, show_na = FALSE) 
+chisq.test(tab1)
+```
+
+# Visualization
+
+In this section, we go over some common types of charts/graphs/plots that can be used for exploratory data analysis by discovering patterns, spotting anomalies and checking model assumptions. However, it is important to note that visualizing data is a only good way to check when the model assumption does not fit than when it does. Therefore, it should be used hand-in-hand with summary statistics and other tests.
+
+- `geom`: the geometric object in question. This refers to the type of object we can observe in a plot. For example: points, lines, and bars.
+
+- `aes`: aesthetic attributes of the geometric object. For example, x/y position, color, shape, and size. Aesthetic attributes are mapped to variables in the dataset.
+
+- `facet`: breaks up a plot into several plots split by the values of another variable.
+
+- `position`: adjustments for barplots
+
+```{r, eval=F}
+data %>% 
+  mutate(var1.indicator = ifelse(var1 %in% c(1,2), "no", "yes")) %>%  #create indicator
+  filter(grepl('2022', var.time)) %>%      #only plot data from year 2022
+  ggplot(aes(x= var3, y=var5, colour=var1.indicator)) + 
+  geom_point(alpha=0.7, size=3.5) +
+  xlab("") +
+  ylab("") +
+  ggtitle("")
+```
+
+## Example 1: Bar plots
+
+Key function: `geom_bar()`
+
+Key argument: `stat = “identity”`, here we are asking R to use the y-value we provide for the dependent variable. By default, R sets `stat = “count”`, which will count the number of observations based on the x-variable groupings. Use the functions `scale_color_manual()` and `scale_fill_manual()` to set manually the bars border line colors and area fill colors.
+
+```{r, eval=F}
+#dodged bar plots
+ggplot(data, aes(x = var3, y = var4, fill=var1.indicator, group=var1.indicator)) + 
+  geom_bar(stat="identity", position = position_dodge(.9))+
+  geom_text(aes(label=scales::percent(round(var5, 2))), # add % as labels
+            position = position_dodge(.9),  colour="black", vjust=-1)+
+  scale_y_continuous("", expand = c(0,0))+
+  scale_x_discrete("")+
+  scale_color_manual(values = pal)+  # recall the color palette we defined at the beginning
+  scale_fill_manual("", values= c("No"= pal[3], "Yes" = pal[4]))+ # color number 3 and 4 in the palette
+  coord_cartesian(ylim=c(0, max(data$var4)*1.1))
+
+
+#let’s use ggplot2 verbs to create a similar dodged bar plots, then add labels to it using geom_text(). #basically, it produces the same plots (with labels) as in the above example syntax, just different wording.
+plot5 <- ggplot(data, aes(var3, var4)) +
+  geom_linerange(
+    aes(x = var3, ymin = 0, ymax = var4, group = var5), 
+    color = "lightgray", size = 1.5,
+    position = position_dodge(0.3)
+    )+
+  geom_point(
+    aes(color = var5),
+    position = position_dodge(0.3), size = 3
+    )+
+  scale_color_manual(values = c("#0073C2FF", "#EFC000FF"))+
+  theme_pubclean()
+
+#add labels
+plot5 + geom_text(
+  aes(label = var4, group = var5), 
+  position = position_dodge(0.8),
+  vjust = -0.3, size = 3.5
+)
+```
+
+Similarly, we can also do a stacked bar plot, only by specifying `position = position_stack()` instead of `position_dodge()`. To set the bars in reversed order, try `position_stack(reverse = TRUE)`. Here’s a simple example:
+
+```{r, eval=F}
+#stacked bar plot
+ggplot(df, aes(x = var3, y = var4)) +
+  geom_bar(
+    aes(color = var5, fill = var5),
+    stat = "identity", position = position_stack()
+    ) +
+  scale_color_manual(values = c(pal[3], pal[4]))+
+  scale_fill_manual(values = pal)
+```
+
+## Example 2: Mean and Median Plots with Error Bars
+
+Create easily plots of mean +/- sd for multiple groups. Use the ggpubr package, which will automatically calculate the summary statistics and create the graphs. *Note: don’t forget to load the ggpubr package.
+
+```{r, eval=F}
+# Create line plots of means
+ggline(ToothGrowth, x = "dose", y = "len", 
+       add = c("mean_sd", "jitter"),
+       color = "supp", palette = pal)
+# Create bar plots of means
+ggbarplot(ToothGrowth, x = "dose", y = "len", 
+          add = c("mean_se", "jitter"),
+          color = "supp", palette = pal,
+          position = position_dodge(0.8))
+```
+
+## Example 3: Donut charts
+
+Donut or doughnut charts are an alternative chart for pie charts, which have a hole in the middle, making them cleaner to read than pie charts. In base R it is possible to create this type of visualizations with `PieChart()` function from `lessR` package.
+
+```{r, eval=F}
+# Donut chart
+lessR::PieChart(var1, data = data,
+               fill = pal,
+               values = "off",
+               main = NULL)
+```
+
+
+
+
+
+
+
+
